@@ -1,0 +1,3 @@
+[submodule "mask_on"]
+	path = mask_on
+	url = https://github.com/demonstan/face-id-with-medical-masks.git

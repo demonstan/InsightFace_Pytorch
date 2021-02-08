@@ -4,6 +4,8 @@ import torch
 from torch.nn import CrossEntropyLoss
 from torchvision import transforms as trans
 
+from data.data_pipe import addMask
+
 def get_config(training = True):
     conf = edict()
     conf.data_path = Path('data')
@@ -13,12 +15,13 @@ def get_config(training = True):
     conf.save_path = conf.work_path/'save'
     conf.input_size = [112,112]
     conf.embedding_size = 512
-    conf.use_mobilfacenet = False
+    conf.use_mobilfacenet = True
     conf.net_depth = 50
     conf.drop_ratio = 0.6
     conf.net_mode = 'ir_se' # or 'ir'
     conf.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     conf.test_transform = trans.Compose([
+                    addMask(),
                     trans.ToTensor(),
                     trans.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
                 ])

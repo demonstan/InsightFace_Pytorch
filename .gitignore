@@ -1,0 +1,4 @@
+# work_space/*
+
+__pycache__
+.vscode

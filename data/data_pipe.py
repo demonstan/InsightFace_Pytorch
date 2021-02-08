@@ -11,18 +11,56 @@ import pickle
 import torch
 import mxnet as mx
 from tqdm import tqdm
+import random
+import json
+
+import face_alignment
+from mask_on.masked_face_sdk.mask_generation_utils import end2end_mask_generation
+
+class addMask():
+    def __init__(self, prob=0.5, mask_database='mask_on/data/masks_base.json'):
+        self.prob = prob
+        self.fa = face_alignment.FaceAlignment(
+            face_alignment.LandmarksType._2D,
+            device='cuda' if torch.cuda.is_available() else 'cpu'
+        )
+        with open(mask_database, 'r') as jf:
+            self.masks_database = json.load(jf)
+
+    def __call__(self, pic):
+        if random.random() < self.prob:
+            return pic
+        img_arr = np.array(pic)
+
+        faces_boxes = [[0, 0, img_arr.shape[0], img_arr.shape[1]]]
+        face_landmarks = self.fa.get_landmarks_from_image(img_arr, faces_boxes)
+        if face_landmarks is None or len(face_landmarks) == 0:
+            return pic
+        face_landmarks = np.floor(face_landmarks[0]).astype(np.int32)
+
+        face_with_mask = end2end_mask_generation(
+            img_arr,
+            self.masks_database,
+            None,
+            face_landmarks
+        )
+        return Image.fromarray(face_with_mask)
+
+    def __repr__(self):
+        return self.__class__.__name__ + '()'
 
 def de_preprocess(tensor):
     return tensor*0.5 + 0.5
     
 def get_train_dataset(imgs_folder):
     train_transform = trans.Compose([
+        addMask(0.9),
         trans.RandomHorizontalFlip(),
         trans.ToTensor(),
         trans.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     ])
     ds = ImageFolder(imgs_folder, train_transform)
-    class_num = ds[-1][1] + 1
+    class_num = len(ds.classes)
     return ds, class_num
 
 def get_train_loader(conf):
@@ -56,8 +94,8 @@ def load_bin(path, rootdir, transform, image_size=[112,112]):
     for i in range(len(bins)):
         _bin = bins[i]
         img = mx.image.imdecode(_bin).asnumpy()
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         img = Image.fromarray(img.astype(np.uint8))
+        # img.show()
         data[i, ...] = transform(img)
         i += 1
         if i % 1000 == 0:
@@ -72,8 +110,10 @@ def get_val_pair(path, name):
     return carray, issame
 
 def get_val_data(data_path):
-    agedb_30, agedb_30_issame = get_val_pair(data_path, 'agedb_30')
-    cfp_fp, cfp_fp_issame = get_val_pair(data_path, 'cfp_fp')
+    # agedb_30, agedb_30_issame = get_val_pair(data_path, 'agedb_30')
+    # cfp_fp, cfp_fp_issame = get_val_pair(data_path, 'cfp_fp')
+    agedb_30, agedb_30_issame = None, None
+    cfp_fp, cfp_fp_issame = None, None
     lfw, lfw_issame = get_val_pair(data_path, 'lfw')
     return agedb_30, cfp_fp, lfw, agedb_30_issame, cfp_fp_issame, lfw_issame
 
@@ -85,10 +125,12 @@ def load_mx_rec(rec_path):
     img_info = imgrec.read_idx(0)
     header,_ = mx.recordio.unpack(img_info)
     max_idx = int(header.label[0])
-    for idx in tqdm(range(1,max_idx)):
+    for idx in tqdm(range(1, max_idx)):
         img_info = imgrec.read_idx(idx)
         header, img = mx.recordio.unpack_img(img_info)
+        # print(img.shape)
         label = int(header.label)
+        img = img[:,:,::-1]
         img = Image.fromarray(img)
         label_path = save_path/str(label)
         if not label_path.exists():
